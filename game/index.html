@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>WHITEOUT — a three.js tactical FPS at Halcyon Station</title>
+<style>
+  /* Palette: canvas, surface, hairline, ink, muted, accent, snow, ice, concrete,
+     aurora, ct, t, site, danger. Every colour below is one of those. */
+  :root {
+    --canvas: #0b0f16;
+    --surface: #141a24;
+    --hairline: #232c3a;
+    --ink: #e9eef5;
+    --muted: #8fa3b8;
+    --accent: #f0a830;
+    --snow: #c9d6e3;
+    --ice: #9fc4e8;
+    --concrete: #6b7686;
+    --aurora: #58d68d;
+    --ct: #3f8cff;
+    --t: #e0533d;
+    --site: #58b368;
+    --danger: #d43d2a;
+    --radius-panel: 4px;
+    --radius-control: 8px;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-ui);
+  }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: 10px; top: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 10px; bottom: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 10px; left: 0; height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 10px; right: 0; height: 2px; width: 7px; }
+
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 90ms linear; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: var(--accent); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+  #hitmarker.kill i { background: var(--danger); }
+
+  #topbar {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--font-readout);
+    font-size: 15px;
+    color: var(--muted);
+  }
+  #timer { font-size: 22px; color: var(--ink); min-width: 52px; text-align: center; }
+  #score-ct { color: var(--ct); font-weight: 700; }
+  #score-t { color: var(--t); font-weight: 700; }
+  #round-label { letter-spacing: .12em; text-transform: uppercase; font-size: 12px; }
+
+  #whiteout-indicator {
+    position: fixed;
+    top: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    border: 1px solid var(--ice);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--ice);
+    font-family: var(--font-readout);
+    font-size: 13px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  #whiteout-indicator[hidden] { display: none; }
+
+  #bomb-status {
+    position: fixed;
+    top: 18px;
+    left: 24px;
+    font-family: var(--font-readout);
+    font-size: 13px;
+    letter-spacing: .08em;
+    color: var(--site);
+    text-transform: uppercase;
+  }
+  #bomb-status .bar {
+    display: block;
+    width: 180px;
+    height: 6px;
+    margin-top: 6px;
+    background: var(--hairline);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #bomb-status .bar i { display: block; height: 100%; width: 0%; background: var(--accent); }
+  #bomb-status[hidden] { display: none; }
+
+  #feed {
+    position: fixed;
+    top: 18px;
+    right: 24px;
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+    font-family: var(--font-readout);
+    font-size: 13px;
+    color: var(--snow);
+  }
+  #feed div { background: var(--surface); border: 1px solid var(--hairline); padding: 3px 8px; border-radius: var(--radius-panel); }
+  #feed div b { color: var(--accent); font-weight: 700; }
+
+  #health {
+    position: fixed;
+    left: 32px;
+    bottom: 24px;
+    font-family: var(--font-readout);
+  }
+  #health-value { font-size: 44px; line-height: 1; color: var(--ink); }
+  #health-label { font-size: 12px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  #health-bar { width: 160px; height: 6px; margin-top: 6px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
+  #health-bar i { display: block; height: 100%; width: 100%; background: var(--aurora); }
+  #health.low #health-value { color: var(--danger); }
+  #health.low #health-bar i { background: var(--danger); }
+
+  #ammo {
+    position: fixed;
+    right: 32px;
+    bottom: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--font-readout);
+    font-size: 56px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  #ammo.empty #ammo-mag { color: var(--danger); }
+  #ammo-reserve { font-size: 16px; letter-spacing: -0.01em; color: var(--muted); }
+  #weapon-name {
+    position: fixed;
+    right: 32px;
+    bottom: 92px;
+    font-family: var(--font-readout);
+    font-size: 14px;
+    letter-spacing: .1em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  #reload-hint {
+    position: fixed;
+    right: 32px;
+    bottom: 116px;
+    font-family: var(--font-readout);
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: .08em;
+  }
+  #reload-hint[hidden] { display: none; }
+
+  #money {
+    position: fixed;
+    left: 32px;
+    bottom: 108px;
+    font-family: var(--font-readout);
+    font-size: 16px;
+    color: var(--accent);
+  }
+
+  #banner {
+    position: fixed;
+    top: 26%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  #banner[hidden] { display: none; }
+  #banner-title { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+  #banner-sub { margin-top: 6px; font-size: 16px; color: var(--muted); }
+
+  #buy-menu {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--canvas);
+    background: color-mix(in srgb, var(--canvas) 72%, transparent);
+    pointer-events: none;
+  }
+  #buy-menu[hidden] { display: none; }
+  #buy-panel {
+    width: min(460px, 94vw);
+    padding: 24px 28px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-panel);
+    pointer-events: auto;
+  }
+  #buy-panel h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  #buy-money { margin: 0 0 16px; font-family: var(--font-readout); font-size: 14px; color: var(--accent); }
+  .buy-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--canvas);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-control);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .buy-row:hover:not(:disabled) { border-color: var(--accent); }
+  .buy-row:disabled { opacity: .45; cursor: default; }
+  .buy-row .buy-name { flex: 1; }
+  .buy-row .buy-price { font-family: var(--font-readout); color: var(--accent); }
+  .buy-row .buy-key {
+    min-width: 22px;
+    padding: 2px 6px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-panel);
+    font-family: var(--font-readout);
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+  #buy-close-hint { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: color-mix(in srgb, var(--canvas) 82%, transparent);
+  }
+  .overlay[hidden] { display: none; }
+  .panel {
+    width: min(480px, 100%);
+    padding: 32px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-panel);
+  }
+  .panel h1 {
+    margin: 0 0 8px;
+    font-size: 34px;
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .panel h1 em { font-style: normal; color: var(--ice); }
+  .panel p {
+    margin: 0 0 24px;
+    max-width: 48ch;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  #play {
+    font: inherit;
+    font-weight: 600;
+    padding: 12px 18px;
+    white-space: nowrap;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-control);
+    background: var(--accent);
+    color: var(--canvas);
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  #play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .keys {
+    margin: 24px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .keys li { display: flex; align-items: center; gap: 8px; }
+  .keys kbd {
+    min-width: 24px;
+    padding: 2px 6px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-panel);
+    font-family: var(--font-readout);
+    font-size: 12px;
+    color: var(--ink);
+    text-align: center;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #hitmarker, #play { transition-duration: 0.01ms; }
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="topbar">
+    <span id="score-t">0</span>
+    <span id="timer">1:40</span>
+    <span id="score-ct">0</span>
+    <span id="round-label">Round 1</span>
+  </div>
+
+  <div id="whiteout-indicator" hidden>WHITEOUT — visibility low</div>
+
+  <div id="bomb-status" hidden><span id="bomb-text">THAW CORE</span><span class="bar"><i id="bomb-bar"></i></span></div>
+
+  <div id="feed"></div>
+
+  <div id="health">
+    <div id="health-label">Health</div>
+    <div id="health-value">100</div>
+    <div id="health-bar"><i></i></div>
+  </div>
+
+  <div id="money">$800</div>
+
+  <div id="weapon-name">Sparrow-9</div>
+  <div id="reload-hint" hidden>Press R to reload</div>
+  <div id="ammo"><span id="ammo-mag">12</span><span id="ammo-reserve">/ 36</span></div>
+
+  <div id="banner" hidden>
+    <div id="banner-title"></div>
+    <div id="banner-sub"></div>
+  </div>
+</div>
+
+<div id="buy-menu" hidden>
+  <div id="buy-panel" role="dialog" aria-modal="false" aria-label="Buy menu">
+    <h2>Supply — Halcyon Station</h2>
+    <p id="buy-money">$800</p>
+    <div id="buy-items"></div>
+    <p id="buy-close-hint">Click an item to buy · B or Esc to close</p>
+  </div>
+</div>
+
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">WHITEOUT</h1>
+    <p id="overlay-copy">A round-based tactical FPS at Halcyon Station, an Antarctic research
+      outpost under a polar-night aurora. Plant the THAW CORE at the Observatory Dome or the
+      Fuel Depot — and mind the blizzard: every whiteout cuts visibility to a few metres.</p>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
+      <li><kbd>Mouse</kbd> Look</li>
+      <li><kbd>Click</kbd> Fire</li>
+      <li><kbd>R</kbd> Reload</li>
+      <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> Weapons</li>
+      <li><kbd>G</kbd> Frag grenade</li>
+      <li><kbd>E</kbd> Hold to plant / defuse the THAW CORE</li>
+      <li><kbd>B</kbd> Buy menu</li>
+      <li><kbd>Ctrl</kbd> Crouch</li>
+      <li><kbd>Space</kbd> Jump</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
